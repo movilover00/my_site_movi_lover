@@ -5,13 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Move Lover</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  
-  <!-- libtl.com SDK -->
   <script src="//libtl.com/sdk.js" data-zone="10058398" data-sdk="show_10058398"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
-    
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: 'Roboto', Arial, sans-serif; background: #0f0f0f; color: #fff; overflow-x: hidden; }
 
@@ -107,21 +104,24 @@
     </div>
     
     <div id="adminContent" style="display:none;">
-      <h3 style="margin:20px 0 10px;">Add New Category</h3>
+      <h3 style="margin:20px 0 10px;">Telegram Channel Link</h3>
+      <input type="text" id="telegramLinkInput" placeholder="https://t.me/YourChannel" style="width:100%; padding:12px; margin-bottom:15px; background:#1f1f1f; border:1px solid #444; border-radius:8px; color:#fff;">
+
+      <h3>Add New Category</h3>
       <input type="text" id="newCategory" placeholder="New Category Name" style="width:100%; padding:12px; margin-bottom:8px; background:#1f1f1f; border:1px solid #444; border-radius:8px; color:#fff;">
       <button onclick="addCategory()" style="background:#00c853; color:#000; width:100%; padding:12px; border:none; border-radius:8px; margin-bottom:20px;">Add Category</button>
 
-      <h3 style="margin:25px 0 10px;">Add New Video</h3>
+      <h3 style="margin:25px 0 10px;">Add / Edit Video</h3>
       <input type="text" id="newTitle" placeholder="Video Title" style="width:100%; padding:12px; margin-bottom:8px; background:#1f1f1f; border:1px solid #444; border-radius:8px; color:#fff;">
       <select id="newCategorySelect" style="width:100%; padding:12px; margin-bottom:8px; background:#1f1f1f; border:1px solid #444; border-radius:8px; color:#fff;"></select>
       <input type="text" id="newLink" placeholder="Direct MP4 Link" style="width:100%; padding:12px; margin-bottom:8px; background:#1f1f1f; border:1px solid #444; border-radius:8px; color:#fff;">
       <input type="text" id="newThumb" placeholder="Thumbnail URL" style="width:100%; padding:12px; margin-bottom:8px; background:#1f1f1f; border:1px solid #444; border-radius:8px; color:#fff;">
-      <button onclick="addVideo()" style="background:#00c853; color:#000; width:100%; padding:14px; border:none; border-radius:8px; font-weight:700;">Add Video</button>
+      <button onclick="addVideo()" style="background:#00c853; color:#000; width:100%; padding:14px; border:none; border-radius:8px; font-weight:700;">Save Video</button>
 
       <h3 style="margin-top:30px;">Existing Categories</h3>
       <div id="adminCategoryList"></div>
 
-      <h3 style="margin-top:30px;">Existing Videos (Click to Delete)</h3>
+      <h3 style="margin-top:30px;">Existing Videos</h3>
       <div id="adminVideoList"></div>
 
       <button onclick="closeAdmin()" style="margin-top:30px; background:#ff0000; color:#fff; width:100%; padding:12px; border:none; border-radius:8px;">Close Admin</button>
@@ -134,16 +134,41 @@
     tg.ready();
 
     const ADMIN_PASSWORD = "153781";
+    const BIN_ID = "69cb78f8aaba882197ad9f65";
+    const MASTER_KEY = "$2a$10$mr0rpThgZSw.qns0mo/jEerdTDBeZVCCQEadGMUTo0CBCMbCMZ1Gm";
 
-    let videos = JSON.parse(localStorage.getItem('moveLoverVideos')) || [];
-    let categories = JSON.parse(localStorage.getItem('moveLoverCategories')) || ["নাটক", "মুভি", "সিরিজ", "ভাইরাল"];
-
+    let videos = [];
+    let categories = ["নাটক", "মুভি", "সিরিজ", "ভাইরাল"];
+    let currentFilter = "All";
     let currentVideo = null;
     let adCount = 0;
-    let currentFilter = "All";
+    let telegramJoinLink = "https://t.me/Moveloverbot";
+    let editingIndex = -1;   // Edit করার জন্য
 
-    function showLoading() { document.getElementById('loading').style.display = 'flex'; }
-    function hideLoading() { document.getElementById('loading').style.display = 'none'; }
+    async function loadVideos() {
+      document.getElementById('loading').style.display = 'flex';
+      try {
+        const res = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+          headers: { "X-Master-Key": MASTER_KEY }
+        });
+        const data = await res.json();
+        videos = data.record || [];
+      } catch (e) {
+        console.log("JSONBin লোড হয়নি");
+      }
+      document.getElementById('loading').style.display = 'none';
+      renderVideos();
+    }
+
+    async function saveVideos() {
+      try {
+        await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "X-Master-Key": MASTER_KEY },
+          body: JSON.stringify(videos)
+        });
+      } catch (e) {}
+    }
 
     function loadUserProfile() {
       const user = tg.initDataUnsafe?.user;
@@ -156,8 +181,7 @@
       const bar = document.getElementById('categoryBar');
       bar.innerHTML = `<div class="category-chip ${currentFilter === 'All' ? 'active' : ''}" onclick="filterCategory('All')">All</div>`;
       categories.forEach(cat => {
-        const active = currentFilter === cat ? 'active' : '';
-        bar.innerHTML += `<div class="category-chip ${active}" onclick="filterCategory('${cat}')">${cat}</div>`;
+        bar.innerHTML += `<div class="category-chip ${currentFilter === cat ? 'active' : ''}" onclick="filterCategory('${cat}')">${cat}</div>`;
       });
     }
 
@@ -168,7 +192,6 @@
     }
 
     function renderVideos() {
-      showLoading();
       const container = document.getElementById('videoList');
       container.innerHTML = '';
       const filtered = currentFilter === 'All' ? videos : videos.filter(v => v.category === currentFilter);
@@ -176,24 +199,23 @@
         const div = document.createElement('div');
         div.className = 'video-item';
         div.innerHTML = `
-          <img src="${video.thumb}" alt="">
+          <img src="${video.thumb || 'https://picsum.photos/id/1015/600/340'}" alt="">
           <div class="premium-overlay">🔒 PREMIUM</div>
           <div class="video-info">
             <div class="video-title">${video.title}</div>
-            <div class="video-meta"><span>Xtube</span><span>${video.views} views</span><span>• ${video.time}</span><span class="hd-tag">HD</span></div>
+            <div class="video-meta"><span>Xtube</span><span>${video.views || '0'} views</span><span>• ${video.time || 'Just now'}</span><span class="hd-tag">HD</span></div>
           </div>
         `;
         div.onclick = () => openOptions(video);
         container.appendChild(div);
       });
-      hideLoading();
     }
 
     function openOptions(video) {
       currentVideo = video;
       adCount = 0;
       document.getElementById('modalTitle').textContent = video.title;
-      document.getElementById('modalThumb').src = video.thumb;
+      document.getElementById('modalThumb').src = video.thumb || 'https://picsum.photos/id/1015/600/340';
       document.getElementById('adStatus').innerHTML = `Watch ads to unlock<br><strong>Unlock Step 0 / 3</strong>`;
       document.getElementById('watchAdBtn').style.display = 'block';
       document.getElementById('playNowBtn').style.display = 'none';
@@ -210,7 +232,7 @@
 
       if (adCount === 1) alert("✅ Step 1 Done!");
       else if (adCount === 2) alert("✅ Step 2 Done!");
-      else if (adCount >= 3) {
+      else if (adCount === 3) {
         alert("✅ All Steps Completed!\nVideo Unlocked");
         document.getElementById('watchAdBtn').style.display = 'none';
         document.getElementById('unlockedMessage').style.display = 'block';
@@ -225,14 +247,14 @@
       if (currentVideo && currentVideo.link) {
         closeModal();
         window.open(currentVideo.link, '_blank');
-      } else alert('ভিডিও লিংক এডমিন থেকে সেট করুন');
+      } else alert('ভিডিও লিংক সেট করা হয়নি');
     };
 
     document.getElementById('likeBtn').onclick = () => {
       if (currentVideo) {
         currentVideo.likes = (currentVideo.likes || 17) + 1;
         document.getElementById('likeCount').textContent = currentVideo.likes;
-        localStorage.setItem('moveLoverVideos', JSON.stringify(videos));
+        saveVideos();
       }
     };
 
@@ -240,7 +262,6 @@
       const text = currentVideo ? currentVideo.title : "Move Lover Video";
       const url = encodeURIComponent(window.location.href);
       const shareText = encodeURIComponent(text);
-
       const modal = document.createElement('div');
       modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:2000;';
       modal.innerHTML = `
@@ -269,12 +290,12 @@
       if (document.getElementById('adminPassword').value.trim() === ADMIN_PASSWORD) {
         document.getElementById('adminContent').style.display = 'block';
         document.getElementById('adminPassword').value = '';
+        document.getElementById('telegramLinkInput').value = telegramJoinLink;
         renderCategorySelect();
         renderAdminCategoryList();
-        renderAdminVideoList();   // ← এখানে ভিডিও লিস্ট রেন্ডার করা হয়েছে
+        renderAdminVideoList();
       } else {
         alert('❌ Wrong Password!');
-        document.getElementById('adminPassword').value = '';
       }
     };
 
@@ -283,50 +304,35 @@
       document.getElementById('adminContent').style.display = 'none';
     };
 
-    function renderCategorySelect() {
-      const select = document.getElementById('newCategorySelect');
-      select.innerHTML = '';
-      categories.forEach(cat => {
-        const option = document.createElement('option');
-        option.value = cat;
-        option.textContent = cat;
-        select.appendChild(option);
-      });
-    }
+    window.addVideo = () => {
+      const title = document.getElementById('newTitle').value.trim();
+      const link = document.getElementById('newLink').value.trim();
+      const thumb = document.getElementById('newThumb').value.trim() || 'https://picsum.photos/id/1015/600/340';
+      const category = document.getElementById('newCategorySelect').value;
 
-    function renderAdminCategoryList() {
-      const container = document.getElementById('adminCategoryList');
-      container.innerHTML = '';
-      categories.forEach((cat, i) => {
-        const div = document.createElement('div');
-        div.style.cssText = 'background:#1f1f1f;padding:12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;';
-        div.innerHTML = `<strong>${cat}</strong><button onclick="deleteCategory(${i})" style="background:#ff0000;color:#fff;border:none;padding:6px 12px;border-radius:6px;">Delete</button>`;
-        container.appendChild(div);
-      });
-    }
-
-    // ←←← ভিডিও ডিলিট অপশন এখানে যোগ করা হয়েছে
-    function renderAdminVideoList() {
-      const container = document.getElementById('adminVideoList');
-      container.innerHTML = '';
-      videos.forEach((video, i) => {
-        const div = document.createElement('div');
-        div.style.cssText = 'background:#1f1f1f;padding:12px;border-radius:8px;margin-bottom:10px;';
-        div.innerHTML = `
-          <strong>${video.title}</strong><br>
-          <small>Category: ${video.category} | Link: ${video.link ? '✅' : '❌'}</small><br>
-          <button onclick="deleteVideo(${i})" style="margin-top:8px;background:#ff0000;color:#fff;border:none;padding:8px 16px;border-radius:6px;">Delete Video</button>
-        `;
-        container.appendChild(div);
-      });
-    }
-
-    window.deleteVideo = (index) => {
-      if (confirm('Delete this video?')) {
-        videos.splice(index, 1);
-        localStorage.setItem('moveLoverVideos', JSON.stringify(videos));
+      if (title && link && category) {
+        if (editingIndex >= 0) {
+          // Edit mode
+          videos[editingIndex] = { ...videos[editingIndex], title, link, thumb, category };
+          editingIndex = -1;
+        } else {
+          videos.unshift({ id: Date.now(), title, thumb, link, views: "0", time: "Just now", likes: 0, category });
+        }
+        saveVideos();
         renderVideos();
-        renderAdminVideoList();   // ডিলিটের পর লিস্ট আপডেট হবে
+        renderAdminVideoList();
+        alert('✅ Video Saved!');
+      } else {
+        alert('Title, Link এবং Category দিতে হবে');
+      }
+    };
+
+    window.deleteVideo = (i) => {
+      if (confirm('Delete this video?')) {
+        videos.splice(i, 1);
+        saveVideos();
+        renderVideos();
+        renderAdminVideoList();
       }
     };
 
@@ -353,28 +359,59 @@
       }
     };
 
-    window.addVideo = () => {
-      const title = document.getElementById('newTitle').value.trim();
-      const link = document.getElementById('newLink').value.trim();
-      const thumb = document.getElementById('newThumb').value.trim() || 'https://picsum.photos/id/1015/600/340';
-      const category = document.getElementById('newCategorySelect').value;
+    function renderCategorySelect() {
+      const select = document.getElementById('newCategorySelect');
+      select.innerHTML = '';
+      categories.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat;
+        option.textContent = cat;
+        select.appendChild(option);
+      });
+    }
 
-      if (title && link && category) {
-        videos.unshift({ id: Date.now(), title, thumb, link, views: "0", time: "Just now", likes: 0, category });
-        localStorage.setItem('moveLoverVideos', JSON.stringify(videos));
-        renderVideos();
-        renderAdminVideoList();
-        alert('✅ Video Added!');
-      } else {
-        alert('Title, Link এবং Category দিতে হবে');
-      }
+    function renderAdminCategoryList() {
+      const container = document.getElementById('adminCategoryList');
+      container.innerHTML = '';
+      categories.forEach((cat, i) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'background:#1f1f1f;padding:12px;border-radius:8px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;';
+        div.innerHTML = `<strong>${cat}</strong><button onclick="deleteCategory(${i})" style="background:#ff0000;color:#fff;border:none;padding:6px 12px;border-radius:6px;">Delete</button>`;
+        container.appendChild(div);
+      });
+    }
+
+    function renderAdminVideoList() {
+      const container = document.getElementById('adminVideoList');
+      container.innerHTML = '';
+      videos.forEach((video, i) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'background:#1f1f1f;padding:12px;border-radius:8px;margin-bottom:10px;';
+        div.innerHTML = `
+          <strong>${video.title}</strong><br>
+          <small>Category: ${video.category}</small><br>
+          <button onclick="editVideo(${i})" style="background:#0084FF;color:#fff;border:none;padding:8px 16px;margin-right:8px;border-radius:6px;">Edit</button>
+          <button onclick="deleteVideo(${i})" style="background:#ff0000;color:#fff;border:none;padding:8px 16px;border-radius:6px;">Delete</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    window.editVideo = (i) => {
+      editingIndex = i;
+      const v = videos[i];
+      document.getElementById('newTitle').value = v.title;
+      document.getElementById('newLink').value = v.link;
+      document.getElementById('newThumb').value = v.thumb || '';
+      document.getElementById('newCategorySelect').value = v.category;
+      document.getElementById('adminContent').scrollIntoView({ behavior: "smooth" });
     };
 
     function init() {
       loadUserProfile();
       renderCategoryBar();
-      renderVideos();
-      document.getElementById('telegramFloat').href = 'https://t.me/Moveloverbot';
+      loadVideos();
+      document.getElementById('telegramFloat').href = telegramJoinLink;
     }
 
     init();
